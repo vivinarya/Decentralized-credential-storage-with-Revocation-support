@@ -1,0 +1,15 @@
+# Environment files
+.env
+.env.local
+.env.* 
+
+# Node modules
+node_modules/
+
+# Logs
+logs
+*.log
+
+# Others
+.DS_Store
+dist/

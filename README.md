@@ -49,6 +49,5 @@ Notes
 - Do NOT commit real private keys. Use .env (gitignored).
 - For local Ethereum testing use `npx hardhat node` and point RPC_URL to http://127.0.0.1:8545.
 
-License
-- Add `LICENSE` file (e.g. MIT) if needed.
+
 

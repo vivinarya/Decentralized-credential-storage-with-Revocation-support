@@ -1,21 +1,37 @@
-import axios from "axios";
 import { useState } from "react";
+import axios from "axios";
+import api from "../api";
+
 type Props = { setShowRevoke: (v: boolean) => void };
+
+function getErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as { error?: string } | undefined;
+    return data?.error ?? err.message ?? "Request failed";
+  }
+  if (err instanceof Error) return err.message;
+  try {
+    return String(err);
+  } catch {
+    return "Unknown error";
+  }
+}
+
 export default function RevocationPanel({ setShowRevoke }: Props) {
   const [fileHash, setFileHash] = useState("");
   const [msg, setMsg] = useState("");
+
   async function handleRevoke() {
     try {
-      const res = await axios.post("http://localhost:5000/api/revoke", { fileHash });
+      const revokeApiKey = (import.meta.env.VITE_REVOKE_API_KEY as string) || "";
+      const headers = revokeApiKey ? { "x-api-key": revokeApiKey } : undefined;
+      const res = await api.post("/api/revoke", { fileHash }, { headers });
       setMsg("Revocation:\n" + JSON.stringify(res.data, null, 2));
-    } catch (err) {
-      const errorMsg =
-        typeof err === "object" && err !== null && "response" in err
-          ? (err as { response?: { data?: { error?: string } }; message?: string }).response?.data?.error || (err as { message?: string }).message
-          : String(err);
-      setMsg("Error: " + errorMsg);
+    } catch (err: unknown) {
+      setMsg("Error: " + getErrorMessage(err));
     }
   }
+
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-40">
       <div className="max-w-md p-6 bg-white shadow-xl rounded-xl">
@@ -27,16 +43,16 @@ export default function RevocationPanel({ setShowRevoke }: Props) {
           placeholder="File hash"
           className="w-full p-2 mb-3 border"
         />
-        <button className="px-5 py-2 text-white bg-red-600 rounded" onClick={handleRevoke}>
-          Revoke
-        </button>
-        <button className="px-4 py-2 ml-4 bg-gray-200 rounded" onClick={() => setShowRevoke(false)}>
-          Close
-        </button>
-        <pre className="mt-4 text-sm text-gray-600 whitespace-pre-wrap">{msg}</pre>
+        <div className="mt-2">
+          <button className="px-5 py-2 text-white bg-red-600 rounded" onClick={handleRevoke}>
+            Revoke
+          </button>
+          <button className="px-4 py-2 ml-4 bg-gray-200 rounded" onClick={() => setShowRevoke(false)}>
+            Close
+          </button>
+        </div>
+        {msg && <pre className="mt-4 text-left whitespace-pre-wrap">{msg}</pre>}
       </div>
     </div>
   );
 }
-
-

@@ -4,7 +4,6 @@ import Document from "../models/Document.js";
 
 const router = express.Router();
 
-// Authenticate/Register user by wallet address
 router.post("/auth", async (req, res) => {
   try {
     const { walletAddress } = req.body;
@@ -18,14 +17,14 @@ router.post("/auth", async (req, res) => {
     let user = await User.findOne({ walletAddress: normalizedAddress });
 
     if (!user) {
-      // Create new user
+
       user = new User({ 
         walletAddress: normalizedAddress,
       });
       await user.save();
       console.log("New user created:", normalizedAddress);
     } else {
-      // Update last login
+
       user.lastLogin = new Date();
       await user.save();
       console.log("User logged in:", normalizedAddress);

@@ -17,38 +17,41 @@ dotenv.config();
 
 const app = express();
 
+// Use a reasonable JSON body size limit to avoid DoS with large base64 payloads
+app.use(express.json({ limit: "4mb" })); // adjust as needed
+app.use(express.urlencoded({ extended: true }));
+
 // Security Middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Allow for development
+  // Enable CSP in production, allow disabled in development for quick iteration
+  contentSecurityPolicy: process.env.NODE_ENV === "production",
   crossOriginEmbedderPolicy: false
 }));
 
 app.use(mongoSanitize()); // Prevent NoSQL injection
 
-app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
-
-// Rate limiting - 100 requests per 15 minutes per IP
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: "Too many requests, please try again later" },
+// Rate limiter — apply to all API routes; tune limits to your needs
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // limit each IP to 200 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
 });
+app.use("/api/", apiLimiter);
 
-app.use("/api/", limiter);
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+if (!process.env.FRONTEND_URL && process.env.NODE_ENV === "production") {
+  console.warn("FRONTEND_URL not set in production — review CORS configuration.");
+}
 
-app.use(express.json({ limit: '10mb' }));
+app.use(cors({
+  origin: FRONTEND_URL,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-api-key"]
+}));
 
-// Connect to MongoDB
-connectDB(process.env.MONGODB_URI);
-
-// API Routes
+// Routes
 app.use("/api/upload", uploadRoute);
 app.use("/api/verify", verifyRoute);
 app.use("/api/revoke", revokeRoute);
@@ -56,43 +59,16 @@ app.use("/api/history", historyRoute);
 app.use("/api/expired", expiredRoute);
 app.use("/api/user", userRoute);
 
-// Health check endpoint
-app.get("/health", async (req, res) => {
-  const redisStatus = redisClient.isOpen ? "connected" : "disconnected";
-  res.json({ 
-    status: "Server running", 
-    mongodb: "connected",
-    redis: redisStatus,
-    environment: process.env.NODE_ENV || "development",
-    timestamp: new Date().toISOString()
-  });
-});
+// TODO: error handling middleware, logging, health check endpoints, etc.
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error("Error:", err.stack);
-  
-  const isDev = process.env.NODE_ENV === "development";
-  
-  res.status(err.status || 500).json({ 
-    error: isDev ? err.message : "Internal server error",
-    ...(isDev && { stack: err.stack })
-  });
-});
-
-// Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`\n====================================`);
-  console.log(`Server running on port ${PORT}`);
-  console.log(` Security: Enabled`);
-  console.log(` Health check: http://localhost:${PORT}/health`);
-  console.log(`====================================\n`);
+connectDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+  });
+}).catch(err => {
+  console.error("Failed to connect to DB:", err);
+  process.exit(1);
 });
 
 

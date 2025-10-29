@@ -43,7 +43,6 @@ Folder highlights
 - credai-frontend/src/components — UI parts (Navbar, HeroSection, FeatureCards, HistoryPanel, UploadModal, VerifyModal)
 - credai-backend/routes — API routes (upload, verify, history, revoke, expired)
 - credai-backend/contracts — DocumentStorage.sol
-- credai-backend/services/tesseractService.js — OCR helper
 
 Notes
 - Do NOT commit real private keys. Use .env (gitignored).

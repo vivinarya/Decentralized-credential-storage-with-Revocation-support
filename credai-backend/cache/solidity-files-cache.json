@@ -1,10 +1,10 @@
 {
   "_format": "hh-sol-cache-2",
   "files": {
-    "C:\\cred-ai\\credai-backend\\contracts\\DocumentStorage.sol": {
-      "lastModificationDate": 1761664032964,
-      "contentHash": "e020344b0e3afe98bd5b604a99355276",
-      "sourceName": "contracts/DocumentStorage.sol",
+    "C:\\cred-ai\\credai-backend\\contracts\\DocumentVerification.sol": {
+      "lastModificationDate": 1761715037482,
+      "contentHash": "aa20f4916d2bcc7192e0ca7a9d19ab0a",
+      "sourceName": "contracts/DocumentVerification.sol",
       "solcConfig": {
         "version": "0.8.20",
         "settings": {
@@ -31,10 +31,10 @@
       },
       "imports": [],
       "versionPragmas": [
-        "^0.8.20"
+        "^0.8.0"
       ],
       "artifacts": [
-        "DocumentStorage"
+        "DocumentVerification"
       ]
     }
   }

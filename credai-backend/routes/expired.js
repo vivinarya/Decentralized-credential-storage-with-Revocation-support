@@ -1,15 +1,23 @@
 import express from "express";
-import tesseractService from "../services/tesseractService.js";
+import { ethers } from "ethers";
+import Document from "../models/Document.js";
 
 const router = express.Router();
 
 router.post("/", async (req, res, next) => {
   try {
-    const { fileBase64 } = req.body;
-    if (!fileBase64) return res.status(400).json({ error: "fileBase64 missing" });
+    const { fileBuffer } = req.body;
+    if (!fileBuffer) return res.status(400).json({ error: "fileBuffer missing" });
 
-    const expirationDate = await tesseractService.getExpiration(fileBase64);
-    const isExpired = expirationDate ? (new Date(expirationDate) < new Date()) : null;
+    const fileHash = ethers.keccak256(Buffer.from(fileBuffer, "base64"));
+
+    const doc = await Document.findOne({ fileHash });
+    if (!doc) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const expirationDate = doc.expirationDate;
+    const isExpired = expirationDate ? new Date(expirationDate) < new Date() : null;
 
     res.json({ expirationDate, isExpired });
   } catch (error) {
@@ -18,4 +26,5 @@ router.post("/", async (req, res, next) => {
 });
 
 export default router;
+
 

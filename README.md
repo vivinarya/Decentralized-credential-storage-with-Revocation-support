@@ -4,7 +4,7 @@ Minimal frontend (Vite + React + Tailwind) and backend (Express + Hardhat + Tess
 This repo contains two folders:
 
 - credai-frontend — Vite + React + TypeScript UI
-- credai-backend — Express API, Hardhat smart contract, OCR service
+- credai-backend — Express API, Hardhat smart contract,redis,mongodb
 
 Quick start (Windows)
 1. Frontend
@@ -28,7 +28,7 @@ Quick start (Windows)
    ```powershell
    cd c:\cred-ai\credai-backend
    npm run compile
-   npm run deploy --network goerli
+   npm run deploy --network amoy
    ```
 
 Environment templates
@@ -43,7 +43,6 @@ Folder highlights
 - credai-frontend/src/components — UI parts (Navbar, HeroSection, FeatureCards, HistoryPanel, UploadModal, VerifyModal)
 - credai-backend/routes — API routes (upload, verify, history, revoke, expired)
 - credai-backend/contracts — DocumentStorage.sol
-- credai-backend/services/tesseractService.js — OCR helper
 
 Notes
 - Do NOT commit real private keys. Use .env (gitignored).

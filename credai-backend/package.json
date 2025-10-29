@@ -8,9 +8,14 @@
     "deploy": "npx hardhat run scripts/deploy.js --network amoy"
   },
   "dependencies": {
+    "@ayanworks/polygon-did-registrar": "^1.0.0",
+    "@ayanworks/polygon-did-resolver": "^1.0.0",
     "axios": "^1.13.0",
     "cors": "^2.8.5",
+    "did-resolver": "^4.1.0",
     "ethers": "^6.15.0",
+    "ethr-did": "^3.0.38",
+    "ethr-did-resolver": "^11.0.5",
     "express": "^4.21.2",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.5.1",
@@ -21,7 +26,8 @@
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "redis": "^5.9.0",
-    "tesseract.js": "^4.1.4"
+    "tesseract.js": "^4.1.4",
+    "web3": "^4.16.0"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^3.0.0",

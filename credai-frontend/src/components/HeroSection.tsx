@@ -15,10 +15,7 @@ export default function HeroSection({ setShowUpload }: Props) {
         </h2>
 
         <div className="flex items-center justify-center gap-4 mt-8">
-          <button
-            onClick={() => setShowUpload(true)}
-            className="btn btn-primary"
-          >
+          <button onClick={() => setShowUpload(true)} className="btn btn-primary">
             Upload Doc
           </button>
           <button
@@ -32,5 +29,6 @@ export default function HeroSection({ setShowUpload }: Props) {
     </section>
   );
 }
+
 
 

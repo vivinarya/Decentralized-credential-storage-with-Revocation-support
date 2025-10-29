@@ -3,6 +3,7 @@ type Props = {
   connected: boolean;
   account: string;
 };
+
 export default function Navbar({ connectWallet, connected, account }: Props) {
   return (
     <nav className="flex items-center justify-between px-6 pt-4">
@@ -18,6 +19,7 @@ export default function Navbar({ connectWallet, connected, account }: Props) {
     </nav>
   );
 }
+
 
 
 

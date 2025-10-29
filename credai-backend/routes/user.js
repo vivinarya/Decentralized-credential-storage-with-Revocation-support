@@ -4,6 +4,7 @@ import Document from "../models/Document.js";
 
 const router = express.Router();
 
+// Authenticate/Register user by wallet address
 router.post("/auth", async (req, res) => {
   try {
     const { walletAddress } = req.body;
@@ -17,14 +18,14 @@ router.post("/auth", async (req, res) => {
     let user = await User.findOne({ walletAddress: normalizedAddress });
 
     if (!user) {
-
-      user = new User({ 
+      // Create new user
+      user = new User({
         walletAddress: normalizedAddress,
       });
       await user.save();
       console.log("New user created:", normalizedAddress);
     } else {
-
+      // Update last login
       user.lastLogin = new Date();
       await user.save();
       console.log("User logged in:", normalizedAddress);
@@ -35,69 +36,37 @@ router.post("/auth", async (req, res) => {
     user.totalDocuments = docCount;
     await user.save();
 
-    res.json({ 
-      success: true,
-      user: {
-        walletAddress: user.walletAddress,
-        username: user.username,
-        createdAt: user.createdAt,
-        lastLogin: user.lastLogin,
-        totalDocuments: user.totalDocuments,
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get user profile
-router.get("/profile/:walletAddress", async (req, res) => {
-  try {
-    const { walletAddress } = req.params;
-    const user = await User.findOne({ walletAddress: walletAddress.toLowerCase() });
-
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // Get user documents
-    const documents = await Document.find({ uploader: walletAddress.toLowerCase() });
-
+    // NOTE: do not set any long-lived session here.
+    // If you want short-lived authentication, return a signed challenge or token.
     res.json({
       user: {
         walletAddress: user.walletAddress,
         username: user.username,
-        email: user.email,
+        totalDocuments: user.totalDocuments,
         createdAt: user.createdAt,
         lastLogin: user.lastLogin,
-        totalDocuments: documents.length,
       },
-      documents,
     });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error("User auth error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// Update user profile
-router.put("/profile", async (req, res) => {
+// Logout endpoint — clears any server-side session/cookie if present.
+// Frontend will call this on beforeunload so server won't keep a session.
+router.post("/logout", (req, res) => {
   try {
-    const { walletAddress, username, email } = req.body;
+    // If you use express-session or similar, destroy the session here:
+    // if (req.session) req.session.destroy(() => {});
+    // If you set an auth cookie, clear it:
+    // res.clearCookie("connect.sid"); // or your cookie name
 
-    const user = await User.findOne({ walletAddress: walletAddress.toLowerCase() });
-    
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    if (username) user.username = username;
-    if (email) user.email = email;
-
-    await user.save();
-
-    res.json({ success: true, user });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    // Respond OK even if no session exists
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Logout error:", err);
+    return res.status(500).json({ error: "Failed to logout" });
   }
 });
 

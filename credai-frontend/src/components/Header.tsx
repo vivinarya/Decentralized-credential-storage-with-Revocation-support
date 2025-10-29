@@ -1,3 +1,5 @@
+import React from "react";
+
 type Props = {
   connected: boolean;
   account: string;
@@ -17,7 +19,6 @@ export default function Header({ connected, account, connectWallet, user }: Prop
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-6">
             <div className="text-lg font-extrabold tracking-tight text-gray-900">CredAI</div>
-            {/* show username & doc count when available */}
             {user?.username && (
               <div className="items-center hidden gap-2 text-sm text-gray-600 sm:flex">
                 <span className="font-medium">{user.username}</span>
@@ -48,5 +49,6 @@ export default function Header({ connected, account, connectWallet, user }: Prop
     </header>
   );
 }
+
 
 

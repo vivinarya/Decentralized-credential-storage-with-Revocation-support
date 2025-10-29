@@ -12,7 +12,7 @@ export default function HistoryPanel() {
 
   useEffect(() => {
     api
-      .get("/api/history")
+       .get("/api/history")
       .then((res) => setHistory(res.data.history ?? []))
       .catch((err) => console.error("Failed to fetch history:", err));
   }, []);

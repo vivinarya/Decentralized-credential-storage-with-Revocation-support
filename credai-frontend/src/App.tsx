@@ -8,6 +8,7 @@ import VerifyModal from "./components/VerifyModal";
 import ExpiredChecker from "./components/ExpiredChecker";
 import RevocationPanel from "./components/RevocationPanel";
 import HistoryPanel from "./components/HistoryPanel";
+import RegisterIssuerModal from "./components/RegisterIssuerModal";
 import FAQCollapse from "./components/FAQCollapse";
 import Footer from "./components/Footer";
 
@@ -40,6 +41,7 @@ function App() {
   const [showVerify, setShowVerify] = useState(false);
   const [showExpired, setShowExpired] = useState(false);
   const [showRevoke, setShowRevoke] = useState(false);
+  const [showRegisterIssuer, setShowRegisterIssuer] = useState(false);
 
   const connectWallet = useCallback(async () => {
     if (!window.ethereum) {
@@ -49,7 +51,6 @@ function App() {
     }
 
     try {
-      // Always request accounts (this will prompt MetaMask each visit)
       const accounts = (await window.ethereum.request({
         method: "eth_requestAccounts",
       })) as string[];
@@ -58,7 +59,6 @@ function App() {
       setAccount(walletAddress);
       setConnected(true);
 
-      // Authenticate user with backend (best-effort, keep user null if auth fails)
       try {
         const res = await api.post("/api/user/auth", {
           walletAddress,
@@ -77,27 +77,22 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // On every page load (mount), request wallet connection so the user is prompted each visit.
-    connectWallet();
-
-    // Listen for account changes to update local state
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length > 0) {
         setAccount(accounts[0]);
         setConnected(true);
-        // re-run auth when account changes
         api.post("/api/user/auth", { walletAddress: accounts[0] })
           .then((res) => setUser(res.data.user))
           .catch(() => setUser(null));
       } else {
-        // user disconnected account in wallet
         setAccount("");
         setConnected(false);
         setUser(null);
       }
     };
 
-    if (window.ethereum?.on) {
+    // FIX: Check if window.ethereum exists AND if .on is a function
+    if (window.ethereum && typeof window.ethereum.on === 'function') {
       try {
         window.ethereum.on("accountsChanged", handleAccountsChanged);
       } catch (err) {
@@ -105,17 +100,42 @@ function App() {
       }
     }
 
-    return () => {
-      // remove listener if provider supports removeListener (typed)
+    const handleBeforeUnload = async () => {
       try {
-        if (window.ethereum?.removeListener) {
+        const logoutUrl = `${(import.meta.env.VITE_API_BASE as string) || "http://localhost:5000"}/api/user/logout`;
+        if (navigator.sendBeacon) {
+          fetch(logoutUrl, { 
+            method: "POST", 
+            keepalive: true,
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+        } else {
+          fetch(logoutUrl, { 
+            method: "POST", 
+            keepalive: true,
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      } catch (e) {
+        console.warn("Logout during unload failed:", e);
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      try {
+        if (window.ethereum && typeof window.ethereum.removeListener === 'function') {
           window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
         }
       } catch {
         // ignore
       }
+      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [connectWallet]);
+  }, []);
 
   return (
     <div className="flex flex-col min-h-screen bg-white font-inter">
@@ -128,7 +148,23 @@ function App() {
 
       <main className="mt-8">
         <HeroSection setShowUpload={setShowUpload} />
-        <FeatureCards />
+        
+        {/* Register Issuer Button */}
+        <div className="flex justify-center mt-2 mb-6">
+          <button
+            onClick={() => setShowRegisterIssuer(true)}
+            className="px-6 py-3 text-sm font-semibold text-white transition bg-purple-600 rounded-lg shadow-md hover:bg-purple-700"
+          >
+            Register as Issuer (DID)
+          </button>
+        </div>
+
+        <FeatureCards
+          setShowUpload={setShowUpload}
+          setShowVerify={setShowVerify}
+          setShowExpired={setShowExpired}
+          setShowRevoke={setShowRevoke}
+        />
         <HistoryPanel />
         <FAQCollapse />
       </main>
@@ -140,11 +176,24 @@ function App() {
       {showVerify && <VerifyModal setShowVerify={setShowVerify} />}
       {showExpired && <ExpiredChecker setShowExpired={setShowExpired} />}
       {showRevoke && <RevocationPanel setShowRevoke={setShowRevoke} />}
+      
+      {/* FIX: Conditional render and proper props for RegisterIssuerModal */}
+      {showRegisterIssuer && (
+        <RegisterIssuerModal 
+          isOpen={showRegisterIssuer}
+          onClose={() => setShowRegisterIssuer(false)}
+          walletAddress={connected ? account : null}
+        />
+      )}
     </div>
   );
 }
 
 export default App;
+
+
+
+
 
 
 

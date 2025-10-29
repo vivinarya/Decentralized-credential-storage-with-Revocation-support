@@ -6,34 +6,38 @@ import mongoSanitize from "express-mongo-sanitize";
 import rateLimit from "express-rate-limit";
 import { connectDB } from "./db.js";
 import redisClient from "./config/redis.js";
+import 'dotenv/config';
+
+// Import did.js FIRST to check for errors
+import didRoute from "./routes/did.js";
+
 import uploadRoute from "./routes/upload.js";
 import verifyRoute from "./routes/verify.js";
 import revokeRoute from "./routes/revoke.js";
 import historyRoute from "./routes/history.js";
 import expiredRoute from "./routes/expired.js";
 import userRoute from "./routes/user.js";
+import adminRoutes from './routes/admin.js';
+
 
 dotenv.config();
 
 const app = express();
 
-// Use a reasonable JSON body size limit to avoid DoS with large base64 payloads
-app.use(express.json({ limit: "4mb" })); // adjust as needed
+app.use(express.json({ limit: "4mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/api/admin', adminRoutes);
 
-// Security Middleware
 app.use(helmet({
-  // Enable CSP in production, allow disabled in development for quick iteration
   contentSecurityPolicy: process.env.NODE_ENV === "production",
   crossOriginEmbedderPolicy: false
 }));
 
-app.use(mongoSanitize()); // Prevent NoSQL injection
+app.use(mongoSanitize());
 
-// Rate limiter — apply to all API routes; tune limits to your needs
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // limit each IP to 200 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -52,14 +56,13 @@ app.use(cors({
 }));
 
 // Routes
+app.use("/api/did", didRoute);
 app.use("/api/upload", uploadRoute);
 app.use("/api/verify", verifyRoute);
 app.use("/api/revoke", revokeRoute);
 app.use("/api/history", historyRoute);
 app.use("/api/expired", expiredRoute);
 app.use("/api/user", userRoute);
-
-// TODO: error handling middleware, logging, health check endpoints, etc.
 
 const PORT = process.env.PORT || 5000;
 connectDB().then(() => {
@@ -70,6 +73,8 @@ connectDB().then(() => {
   console.error("Failed to connect to DB:", err);
   process.exit(1);
 });
+
+
 
 
 

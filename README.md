@@ -1,6 +1,6 @@
 # CredAI — Document Verification
 
-Minimal frontend (Vite + React + Tailwind) and backend (Express + Hardhat + Tesseract).  
+Minimal frontend (Vite + React + Tailwind) and backend (Express + Hardhat). 
 This repo contains two folders:
 
 - credai-frontend — Vite + React + TypeScript UI

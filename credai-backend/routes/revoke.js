@@ -6,42 +6,125 @@ import { clearCache } from "../middleware/cache.js";
 
 const router = express.Router();
 
-router.post("/", async (req, res, next) => {
+function requireApiKey(req, res, next) {
+  const configuredKey = process.env.REVOKE_API_KEY;
+  if (!configuredKey) {
+
+    console.error("REVOKE_API_KEY is not configured on the server");
+    return res.status(500).json({ error: "Server configuration error" });
+  }
+  const incoming = req.header("x-api-key") || "";
+  if (incoming !== configuredKey) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+
+function normalizeFileHash(raw) {
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  const hexOnly = s.startsWith("0x") ? s.slice(2) : s;
+  if (!/^[a-fA-F0-9]{64}$/.test(hexOnly)) return null;
+  return "0x" + hexOnly.toLowerCase();
+}
+
+router.post("/", requireApiKey, async (req, res) => {
   try {
-    const { fileHash } = req.body;
-    if (!fileHash) return res.status(400).json({ error: "fileHash missing" });
-    if (typeof fileHash !== "string") return res.status(400).json({ error: "fileHash must be a string" });
+    const { fileHash: rawFileHash } = req.body;
+    if (!rawFileHash) return res.status(400).json({ error: "fileHash missing" });
+
+    const fileHash = normalizeFileHash(rawFileHash);
+    if (!fileHash) return res.status(400).json({ error: "fileHash must be a 32-byte hex string" });
+
+
+    const { PRIVATE_KEY, NETWORK, CONTRACT_ADDRESS } = process.env;
+    if (!PRIVATE_KEY || !NETWORK || !CONTRACT_ADDRESS) {
+      console.error("Missing required env vars for revocation: PRIVATE_KEY, NETWORK or CONTRACT_ADDRESS");
+      return res.status(500).json({ error: "Server configuration error" });
+    }
+
 
     const doc = await Document.findOne({ fileHash: { $eq: fileHash } });
     if (!doc) {
+
       return res.status(404).json({ error: "Document not found in database" });
     }
 
-    doc.revoked = true;
-    await doc.save();
-    console.log("Document revoked in DB:", fileHash);
+
+    if (doc.revoked) {
+      return res.status(200).json({ success: true, message: "Document already revoked", txHash: doc.revocationTx || null });
+    }
 
 
-    const provider = new ethers.JsonRpcProvider(process.env.NETWORK);
-    const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-    const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, CONTRACT_ABI, wallet);
+    const provider = new ethers.JsonRpcProvider(NETWORK);
+    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, wallet);
 
-    const tx = await contract.revokeDocument(fileHash);
-    await tx.wait();
-    console.log("Document revoked on blockchain:", fileHash);
 
-    await clearCache("cache:/api/history*");
-    await clearCache(`verify:${fileHash}`);
-    console.log("Cache cleared after revocation");
+    let tx;
+    try {
+      tx = await contract.revokeDocument(fileHash);
+    } catch (err) {
+      console.error("Error sending revoke transaction:", {
+        fileHash,
+        message: err && err.message ? err.message : String(err),
+      });
+      return res.status(502).json({ error: "Failed to submit revocation transaction" });
+    }
 
-    res.json({ 
-      success: true, 
-      message: "Document revoked in DB and blockchain",
-      transactionHash: tx.hash
+
+    let receipt;
+    try {
+      receipt = await tx.wait();
+    } catch (err) {
+      console.error("Transaction failed or timed out while waiting for confirmation:", {
+        fileHash,
+        txHash: tx.hash,
+        message: err && err.message ? err.message : String(err),
+      });
+      return res.status(502).json({ error: "Revocation transaction failed or timed out" });
+    }
+
+    if (receipt && typeof receipt.status !== "undefined" && receipt.status === 0) {
+      console.error("Revocation transaction reverted on chain", { fileHash, txHash: tx.hash });
+      return res.status(502).json({ error: "Revocation transaction reverted" });
+    }
+
+    try {
+      doc.revoked = true;
+      doc.revocationTx = tx.hash;
+      doc.revokedAt = new Date();
+      await doc.save();
+    } catch (err) {
+
+      console.error("Failed to update DB after successful revocation:", { fileHash, txHash: tx.hash, message: err.message });
+
+      await clearCache("cache:/api/history*").catch(() => {});
+      await clearCache(`verify:${fileHash}`).catch(() => {});
+      return res.status(200).json({
+        success: true,
+        message: "Revocation performed on blockchain but DB update failed — will need reconciliation",
+        transactionHash: tx.hash,
+      });
+    }
+
+
+    await clearCache("cache:/api/history*").catch((e) => console.error("cache clear error", e));
+    await clearCache(`verify:${fileHash}`).catch((e) => console.error("cache clear error", e));
+
+
+    res.json({
+      success: true,
+      message: "Document revoked on blockchain and locally",
+      transactionHash: tx.hash,
     });
   } catch (error) {
-    console.error("Revocation error:", error);
-    next(error);
+
+    console.error("Revocation endpoint unexpected error:", {
+      message: error && error.message ? error.message : String(error),
+    });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

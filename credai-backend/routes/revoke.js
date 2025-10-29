@@ -10,9 +10,9 @@ router.post("/", async (req, res, next) => {
   try {
     const { fileHash } = req.body;
     if (!fileHash) return res.status(400).json({ error: "fileHash missing" });
+    if (typeof fileHash !== "string") return res.status(400).json({ error: "fileHash must be a string" });
 
-
-    const doc = await Document.findOne({ fileHash });
+    const doc = await Document.findOne({ fileHash: { $eq: fileHash } });
     if (!doc) {
       return res.status(404).json({ error: "Document not found in database" });
     }

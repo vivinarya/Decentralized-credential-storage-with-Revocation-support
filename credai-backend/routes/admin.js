@@ -1,5 +1,13 @@
 import express from 'express';
 import Issuer from '../models/Issuer.js';
+import rateLimit from 'express-rate-limit';
+
+// Rate limiter: restrict approval attempts to 10 per 15 minutes per IP
+const approveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: { error: 'Too many approval attempts from this IP, please try again later.' }
+});
 
 const router = express.Router();
 
@@ -36,7 +44,7 @@ router.get('/issuers/pending', async (req, res) => {
  * POST /api/admin/issuers/:did/approve
  * Approve an issuer
  */
-router.post('/issuers/:did/approve', async (req, res) => {
+router.post('/issuers/:did/approve', approveLimiter, async (req, res) => {
   try {
     const { did } = req.params;
 

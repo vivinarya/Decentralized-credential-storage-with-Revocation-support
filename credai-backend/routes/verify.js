@@ -40,21 +40,21 @@ router.get("/:fileHash", async (req, res) => {
     try {
       const cached = await redisClient.get(cacheKey);
       if (cached) {
-        console.log("✅ Verification cache HIT:", fileHash.slice(0, 10) + "...");
+        console.log(" Verification cache HIT:", fileHash.slice(0, 10) + "...");
         return res.json(JSON.parse(cached));
       }
     } catch (cacheError) {
       console.error("Cache read error:", cacheError?.message ?? cacheError);
     }
 
-    console.log('📚 Checking MongoDB...');
+    console.log('Checking MongoDB...');
     const doc = await Document.findOne({ fileHash });
     if (!doc) {
       return res.status(404).json({ verified: false, error: "Document not found in database" });
     }
-    console.log('✅ Document found in database');
+    console.log('Document found in database');
 
-    console.log('⛓️  Verifying on blockchain...');
+    console.log(' Verifying on blockchain...');
     const provider = new ethers.JsonRpcProvider(process.env.NETWORK);
     const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
@@ -70,7 +70,7 @@ router.get("/:fileHash", async (req, res) => {
     if (!verification.exists) {
       return res.status(404).json({ verified: false, error: "Document not found on blockchain" });
     }
-    console.log('✅ Document verified on blockchain');
+    console.log('Document verified on blockchain');
 
     // Verify blockchain and database consistency
     if (verification.uploader.toLowerCase() !== doc.uploader.toLowerCase()) {
@@ -109,7 +109,7 @@ router.get("/:fileHash", async (req, res) => {
     };
 
     if (doc.issuerDID) {
-      console.log('📋 Getting issuer & VC info...');
+      console.log('Getting issuer & VC info...');
       const issuer = await findIssuerByDID(doc.issuerDID);
 
       if (issuer) {

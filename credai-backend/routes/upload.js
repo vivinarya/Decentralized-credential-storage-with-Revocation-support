@@ -1,315 +1,431 @@
 import express from "express";
-import multer from "multer";
-import { body, validationResult } from "express-validator";
-import axios from "axios";
 import { ethers } from "ethers";
-import Document from "../models/Document.js";
-import Issuer from "../models/Issuer.js";
-import vcService from "../services/vcService.js";
 import { CONTRACT_ABI } from "../contractABI.js";
-import { clearCache } from "../middleware/cache.js";
+import Document from "../models/Document.js";
+import redisClient from "../config/redis.js";
+import vcService from "../services/vcService.js";
+import Issuer from "../models/Issuer.js";
 
 const router = express.Router();
 
-// Validate Pinata credentials at startup
-if (!process.env.PINATA_API_KEY || !process.env.PINATA_API_SECRET) {
-  throw new Error('Pinata API credentials not configured in environment variables');
+/**
+ * Helper: Find issuer by DID with case-insensitive matching and regex injection protection
+ * @param {string} did - The DID to search for
+ * @returns {Promise<Issuer|null>}
+ */
+async function findIssuerByDID(did) {
+  // Escape special regex characters to prevent regex injection
+  const escapedDID = did.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return await Issuer.findOne({ 
+    did: { $regex: new RegExp(`^${escapedDID}$`, 'i') }
+  });
 }
 
-// Configure multer with file size limit to prevent memory exhaustion
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const upload = multer({ 
-  storage: multer.memoryStorage(),
-  limits: { 
-    fileSize: MAX_FILE_SIZE,
-    files: 1
-  },
-  fileFilter: (req, file, cb) => {
-    // Optional: Add file type validation
-    cb(null, true);
+/**
+ * GET /api/verify/:fileHash
+ * Quick verification by file hash (no file buffer needed)
+ */
+router.get("/:fileHash", async (req, res) => {
+  try {
+    const { fileHash } = req.params;
+    const detailed = req.query.detailed === "true";
+
+    console.log('🔍 Verifying document:', fileHash.slice(0, 10) + '...');
+
+    if (!/^0x[a-fA-F0-9]{64}$/.test(fileHash)) {
+      return res.status(400).json({ error: "Invalid file hash format" });
+    }
+
+    const cacheKey = `verify:${fileHash}`;
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        console.log("✅ Verification cache HIT:", fileHash.slice(0, 10) + "...");
+        return res.json(JSON.parse(cached));
+      }
+    } catch (cacheError) {
+      console.error("Cache read error:", cacheError?.message ?? cacheError);
+    }
+
+    console.log('Checking MongoDB...');
+    const doc = await Document.findOne({ fileHash });
+    if (!doc) {
+      return res.status(404).json({ verified: false, error: "Document not found in database" });
+    }
+    console.log('Document found in database');
+
+    console.log('⛓️  Verifying on blockchain...');
+    const provider = new ethers.JsonRpcProvider(process.env.NETWORK);
+    const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+
+    const verificationRaw = await contract.verifyDocument(fileHash);
+    const verification = {
+      exists: verificationRaw.exists,
+      uploader: verificationRaw.uploader,
+      expiration: Number(verificationRaw.expiration.toString()),
+      expired: verificationRaw.expired,
+      revoked: verificationRaw.revoked
+    };
+
+    if (!verification.exists) {
+      return res.status(404).json({ verified: false, error: "Document not found on blockchain" });
+    }
+    console.log(' Document verified on blockchain');
+
+    // Verify blockchain and database consistency
+    if (verification.uploader.toLowerCase() !== doc.uploader.toLowerCase()) {
+      console.warn('Uploader mismatch between blockchain and database');
+      return res.status(409).json({ 
+        verified: false, 
+        error: "Data inconsistency detected between blockchain and database" 
+      });
+    }
+    
+    if (verification.revoked !== doc.revoked) {
+      console.warn('Revocation status mismatch');
+      return res.status(409).json({ 
+        verified: false, 
+        error: "Data inconsistency detected between blockchain and database" 
+      });
+    }
+
+    const response = {
+      verified: true,
+      fileHash,
+      document: {
+        ipfsCid: doc.ipfsCid,
+        uploadedBy: doc.uploader,
+        uploadedAt: doc.timestamp,
+        expirationDate: doc.expirationDate,
+        revoked: doc.revoked,
+        revokedAt: doc.revokedAt || null
+      },
+      blockchain: {
+        uploader: verification.uploader,
+        expiration: new Date(verification.expiration * 1000),
+        revoked: verification.revoked,
+        expired: verification.expired
+      }
+    };
+
+    if (doc.issuerDID) {
+      console.log(' Getting issuer & VC info...');
+      const issuer = await findIssuerByDID(doc.issuerDID);
+
+      if (issuer) {
+        response.issuer = {
+          did: doc.issuerDID,
+          name: doc.issuerName,
+          organization: doc.issuerOrganization,
+          verified: issuer.profile?.verified ?? false
+        };
+
+        if (doc.verifiableCredential) {
+          try {
+            const vcVerification = await vcService.verifyCredential(
+              doc.verifiableCredential, 
+              issuer,
+              doc
+            );
+
+            response.credential = {
+              id: doc.verifiableCredential.id,
+              issuanceDate: doc.verifiableCredential.issuanceDate,
+              verification: vcVerification,
+              status: {
+                revoked: doc.revoked,
+                revokedAt: doc.revokedAt
+              }
+            };
+          } catch (vcError) {
+            console.error('VC verification failed:', vcError.message);
+            response.credential = {
+              error: 'Credential verification failed',
+              id: doc.verifiableCredential?.id
+            };
+          }
+        }
+      }
+    }
+
+    if (detailed) {
+      response.detailed = {
+        blockchainStatus: "registered",
+        verificationMethod: doc.issuerDID ? "DID + Credential" : "Document Hash"
+      };
+    }
+
+    try {
+      // Reduced TTL for verification cache to 60 seconds for real-time updates
+      await redisClient.set(cacheKey, JSON.stringify(response), { EX: 60 });
+    } catch (cacheSetError) {
+      console.error("Cache set error:", cacheSetError?.message ?? cacheSetError);
+    }
+
+    console.log('Verification complete\n');
+    res.json(response);
+
+  } catch (error) {
+    console.error("Verification error:", error.message);
+    // Don't expose internal error details
+    res.status(500).json({ error: "Verification failed" });
   }
 });
 
 /**
- * POST /api/upload
- * Upload a document with optional DID & VC
+ * POST /api/verify
+ * Full verification with file buffer (includes blockchain verification)
  */
-router.post(
-  "/",
-  upload.single("file"),
-  [
-    body("uploader")
-      .isString()
-      .trim()
-      .matches(/^0x[a-fA-F0-9]{40}$/)
-      .withMessage("Invalid Ethereum address"),
-    body("issuerDID")
-      .optional()
-      .matches(/^did:ethr:maticamoy:0x[a-fA-F0-9]{40}(:\d+)?$/i)
-      .withMessage("Invalid DID format"),
-    body("expirationTimestamp")
-      .optional()
-      .isInt({ min: 0 })
-      .custom((value) => {
-        if (value > 0 && value < Math.floor(Date.now() / 1000)) {
-          throw new Error('Expiration timestamp must be in the future');
-        }
-        return true;
-      })
-      .withMessage("Invalid expiration timestamp"),
-    body("docType")
-      .optional()
-      .isString()
-      .trim()
-      .isIn(['general', 'passport', 'certificate', 'test-document', 'other'])
-      .withMessage("Invalid document type")
-  ],
-  async (req, res, next) => {
-    let savedDoc = null;
+router.post("/", async (req, res) => {
+  try {
+    const { fileBuffer, docType, metadata } = req.body;
+
+    if (!fileBuffer) return res.status(400).json({ error: "fileBuffer missing" });
+    if (typeof fileBuffer !== "string") return res.status(400).json({ error: "fileBuffer must be base64 string" });
+
+    const MAX_BASE64_LENGTH = 5 * 1024 * 1024;
+    if (fileBuffer.length > MAX_BASE64_LENGTH) {
+      return res.status(413).json({ error: "Payload too large" });
+    }
+
+    let buf;
+    try {
+      buf = Buffer.from(fileBuffer, "base64");
+    } catch (err) {
+      return res.status(400).json({ error: "Invalid base64 fileBuffer" });
+    }
+
+    const fileHash = ethers.keccak256(buf);
+    const cacheKey = `verify:${fileHash}`;
 
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        console.log("Verification cache HIT:", fileHash.slice(0, 10) + "...");
+        return res.json(JSON.parse(cached));
       }
-
-      if (!req.file) {
-        return res.status(400).json({ error: "File is required" });
-      }
-
-      const { expirationTimestamp, uploader, issuerDID, docType } = req.body;
-
-      console.log('📤 Upload request:', {
-        fileName: req.file.originalname,
-        fileSize: `${(req.file.size / 1024 / 1024).toFixed(2)} MB`,
-        issuerDID: issuerDID || 'none',
-        uploader: uploader.slice(0, 6) + '...'
-      });
-
-      // Prepare FormData for Pinata
-      console.log('⏳ Uploading to IPFS...');
-      const data = new FormData();
-
-      // Convert buffer to Blob for FormData compatibility
-      const fileBlob = new Blob([req.file.buffer], { 
-        type: req.file.mimetype || 'application/octet-stream' 
-      });
-      data.append("file", fileBlob, req.file.originalname);
-
-      // Upload to Pinata IPFS with timeout and size limits
-      const pinRes = await axios.post(
-        "https://api.pinata.cloud/pinning/pinFileToIPFS",
-        data,
-        {
-          timeout: 60000, // 60 second timeout
-          maxContentLength: MAX_FILE_SIZE,
-          maxBodyLength: MAX_FILE_SIZE,
-          headers: {
-            "Content-Type": "multipart/form-data",
-            pinata_api_key: process.env.PINATA_API_KEY,
-            pinata_secret_api_key: process.env.PINATA_API_SECRET,
-          },
-        }
-      );
-
-      const ipfsCid = pinRes.data.IpfsHash;
-      const fileHash = ethers.keccak256(req.file.buffer);
-
-      console.log('✅ IPFS uploaded:', ipfsCid.slice(0, 10) + '...');
-      console.log('🔐 File hash:', fileHash.slice(0, 10) + '...');
-
-      // Setup blockchain connection
-      const provider = new ethers.JsonRpcProvider(process.env.NETWORK);
-      const contract = new ethers.Contract(
-        process.env.CONTRACT_ADDRESS,
-        CONTRACT_ABI,
-        provider
-      );
-
-      // Check blockchain first for existing document
-      console.log('🔍 Checking blockchain for existing document...');
-      try {
-        const verification = await contract.verifyDocument(fileHash);
-        if (verification.exists) {
-          console.log('⚠️  Document already exists on blockchain');
-          return res.status(409).json({ 
-            error: "Document already registered on blockchain",
-            fileHash 
-          });
-        }
-      } catch (checkError) {
-        console.warn('⚠️  Blockchain check failed (continuing):', checkError.message);
-        // Continue even if check fails (network issues etc)
-      }
-
-      // Check if document already exists in MongoDB
-      const existingDoc = await Document.findOne({ fileHash });
-      if (existingDoc) {
-        console.log('⚠️  Document already exists in database');
-        return res.status(409).json({ 
-          error: "Document already exists in database",
-          fileHash,
-          ipfsCid: existingDoc.ipfsCid
-        });
-      }
-
-      const expirationDate = expirationTimestamp
-        ? new Date(parseInt(expirationTimestamp) * 1000)
-        : null;
-
-      // Get issuer info if DID provided
-      let issuerInfo = null;
-      let verifiableCredential = null;
-      
-      if (issuerDID) {
-        console.log('🔍 Looking up issuer with DID:', issuerDID);
-        
-        // Case-insensitive DID lookup
-        issuerInfo = await Issuer.findOne({ 
-          did: { $regex: new RegExp(`^${issuerDID}$`, 'i') } 
-        });
-        
-        if (!issuerInfo) {
-          console.log('⚠️  Issuer not found for DID:', issuerDID);
-          return res.status(404).json({ error: "Issuer not found" });
-        }
-
-        console.log('✅ Issuer found:', issuerInfo.profile.name, 'from', issuerInfo.profile.organization);
-        console.log('📝 Creating Verifiable Credential...');
-        
-        // Create VC for document
-        const tempDoc = {
-          fileHash,
-          ipfsCid,
-          uploader: uploader.toLowerCase(),
-          expirationDate,
-          docType: docType || 'general'
-        };
-
-        verifiableCredential = await vcService.createVerifiableCredential(tempDoc, issuerInfo);
-        console.log('✅ VC created:', verifiableCredential.id.slice(0, 30) + '...');
-      }
-
-      // Save to MongoDB
-      console.log('💾 Saving to MongoDB...');
-      const doc = new Document({
-        fileHash,
-        ipfsCid,
-        uploader: uploader.toLowerCase(),
-        docType: docType || 'general',
-        expirationDate,
-        issuerDID: issuerInfo?.did || null,
-        issuerName: issuerInfo?.profile.name || null,
-        issuerOrganization: issuerInfo?.profile.organization || null,
-        verifiableCredential: verifiableCredential || null,
-      });
-
-      await doc.save();
-      savedDoc = doc;
-      console.log('✅ Document saved to MongoDB');
-
-      // Register on blockchain
-      console.log('⛓️  Registering on blockchain...');
-      const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-      const contractWithSigner = new ethers.Contract(
-        process.env.CONTRACT_ADDRESS,
-        CONTRACT_ABI,
-        wallet
-      );
-
-      const expirationTimestampInt = parseInt(expirationTimestamp) || 0;
-      const tx = await contractWithSigner.registerDocument(fileHash, expirationTimestampInt);
-      const receipt = await tx.wait();
-      console.log('✅ Registered on blockchain:', tx.hash.slice(0, 10) + '...');
-
-      // Update issuer stats if applicable (with error handling)
-      if (issuerInfo) {
-        try {
-          issuerInfo.documentsIssued += 1;
-          issuerInfo.lastActivityAt = new Date();
-          await issuerInfo.save();
-          console.log('📊 Updated issuer stats');
-        } catch (statsError) {
-          console.error('⚠️  Failed to update issuer stats:', statsError.message);
-          // Document is still successfully registered, just log the error
-        }
-      }
-
-      // Clear cache
-      await clearCache("cache:/api/history*");
-
-      console.log('✅ Upload complete!\n');
-
-      res.json({ 
-        success: true,
-        message: "Document uploaded successfully",
-        data: {
-          fileHash, 
-          ipfsCid, 
-          transactionHash: tx.hash,
-          blockNumber: receipt.blockNumber,
-          issuerDID: issuerInfo?.did || null,
-          verifiableCredentialId: verifiableCredential?.id || null,
-          expirationDate,
-          timestamp: doc.timestamp
-        }
-      });
-    } catch (error) {
-      console.error("❌ Upload error:", error.message);
-
-      // Rollback: Delete MongoDB entry if blockchain registration failed
-      if (savedDoc && savedDoc._id) {
-        try {
-          await Document.deleteOne({ _id: savedDoc._id });
-          console.log('🔄 Rolled back MongoDB entry due to error');
-        } catch (rollbackError) {
-          console.error('❌ Rollback failed:', rollbackError.message);
-        }
-      }
-
-      // Handle specific blockchain duplicate error with type checking
-      if (error.code === 'CALL_EXCEPTION' && 
-          typeof error.reason === 'string' && 
-          error.reason.includes('already exists')) {
-        return res.status(409).json({ 
-          error: "Document already exists on blockchain",
-          fileHash
-        });
-      }
-
-      // Handle multer file size error
-      if (error.code === 'LIMIT_FILE_SIZE') {
-        return res.status(413).json({ 
-          error: `File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB` 
-        });
-      }
-
-      // Handle Pinata timeout
-      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-        return res.status(504).json({ 
-          error: "IPFS upload timeout. Please try again." 
-        });
-      }
-      
-      // Handle validation errors
-      if (error.name === "ValidationError") {
-        return res.status(400).json({ error: error.message });
-      }
-
-      // Handle MongoDB duplicate key error
-      if (error.code === 11000) {
-        return res.status(409).json({ 
-          error: "Document with this hash already exists" 
-        });
-      }
-      
-      // Pass to global error handler
-      next(error);
+      console.log("Verification cache MISS:", fileHash.slice(0, 10) + "...");
+    } catch (cacheError) {
+      console.error("Cache read error:", cacheError?.message ?? cacheError);
     }
+
+    // Check MongoDB
+    const doc = await Document.findOne({ fileHash });
+
+    if (!doc) {
+      return res.status(404).json({ 
+        verified: false, 
+        error: "Document not found in database" 
+      });
+    }
+
+    // Add blockchain verification for consistency with GET endpoint
+    console.log('Verifying on blockchain...');
+    const provider = new ethers.JsonRpcProvider(process.env.NETWORK);
+    const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+
+    const verificationRaw = await contract.verifyDocument(fileHash);
+    const verification = {
+      exists: verificationRaw.exists,
+      uploader: verificationRaw.uploader,
+      expiration: Number(verificationRaw.expiration.toString()),
+      expired: verificationRaw.expired,
+      revoked: verificationRaw.revoked
+    };
+
+    if (!verification.exists) {
+      return res.status(404).json({ 
+        verified: false, 
+        error: "Document not found on blockchain" 
+      });
+    }
+
+    // Verify blockchain and database consistency
+    if (verification.uploader.toLowerCase() !== doc.uploader.toLowerCase()) {
+      console.warn('Uploader mismatch between blockchain and database');
+      return res.status(409).json({ 
+        verified: false, 
+        error: "Data inconsistency detected between blockchain and database" 
+      });
+    }
+    
+    if (verification.revoked !== doc.revoked) {
+      console.warn('Revocation status mismatch');
+      return res.status(409).json({ 
+        verified: false, 
+        error: "Data inconsistency detected between blockchain and database" 
+      });
+    }
+
+    const result = {
+      verified: true,
+      fileHash,
+      document: {
+        revoked: doc.revoked,
+        expirationDate: doc.expirationDate,
+        uploadedAt: doc.timestamp
+      },
+      blockchain: {
+        uploader: verification.uploader,
+        expiration: new Date(verification.expiration * 1000),
+        revoked: verification.revoked,
+        expired: verification.expired
+      }
+    };
+
+    try {
+      await redisClient.set(cacheKey, JSON.stringify(result), { EX: 60 });
+    } catch (cacheSetError) {
+      console.error("Cache set error:", cacheSetError?.message ?? cacheSetError);
+    }
+
+    return res.json(result);
+
+  } catch (error) {
+    console.error("Verification error:", error?.message ?? String(error));
+    return res.status(500).json({ error: "Verification failed" });
   }
-);
+});
+
+/**
+ * POST /api/verify/credential
+ * Verify a Verifiable Credential with proper validation
+ */
+router.post("/credential", async (req, res) => {
+  try {
+    const { fileHash, verifiableCredential } = req.body;
+
+    if (!fileHash) {
+      return res.status(400).json({ error: "fileHash required" });
+    }
+
+    if (!verifiableCredential) {
+      return res.status(400).json({ error: "verifiableCredential required" });
+    }
+
+    // Structural validation of VC
+    if (!verifiableCredential.issuer || !verifiableCredential.id) {
+      return res.status(400).json({ 
+        error: "Invalid verifiableCredential structure: missing issuer or id" 
+      });
+    }
+
+    const doc = await Document.findOne({ fileHash });
+    if (!doc) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    // Use helper function to prevent regex injection
+    const issuer = await findIssuerByDID(verifiableCredential.issuer);
+    
+    if (!issuer) {
+      return res.status(404).json({ error: "Issuer not found" });
+    }
+
+    let vcVerification;
+    let verificationError = null;
+
+    // Wrapped VC verification with proper error handling
+    try {
+      vcVerification = await vcService.verifyCredential(
+        verifiableCredential, 
+        issuer,
+        doc
+      );
+    } catch (vcError) {
+      console.error("VC verification failed:", vcError.message);
+      
+      // Classify error types for proper HTTP status codes
+      if (vcError.message?.includes('parse') || vcError.message?.includes('format')) {
+        return res.status(400).json({ 
+          error: "Invalid credential format",
+          type: "format_error"
+        });
+      } else if (vcError.message?.includes('validation')) {
+        return res.status(422).json({ 
+          error: "Credential validation failed",
+          type: "validation_error"
+        });
+      } else if (vcError.message?.includes('signature') || vcError.message?.includes('proof')) {
+        return res.status(401).json({ 
+          error: "Credential signature verification failed",
+          type: "signature_error"
+        });
+      } else if (vcError.message?.includes('expired')) {
+        return res.status(410).json({ 
+          error: "Credential has expired",
+          type: "expiration_error"
+        });
+      } else if (vcError.message?.includes('revoked')) {
+        return res.status(412).json({ 
+          error: "Credential has been revoked",
+          type: "revocation_error"
+        });
+      } else {
+        // Generic verification failure
+        verificationError = "Credential verification failed";
+        vcVerification = { valid: false };
+      }
+    }
+
+    // Get credential status with error handling
+    let credentialStatus;
+    try {
+      credentialStatus = await vcService.getCredentialStatus(
+        verifiableCredential.id, 
+        doc
+      );
+    } catch (statusError) {
+      console.error("Failed to retrieve credential status:", statusError.message);
+      credentialStatus = { 
+        available: false, 
+        error: "Status check unavailable" 
+      };
+    }
+
+    res.json({
+      success: true,
+      fileHash,
+      document: {
+        exists: true,
+        revoked: doc.revoked,
+        expirationDate: doc.expirationDate
+      },
+      credential: {
+        id: verifiableCredential.id,
+        issuer: issuer.profile?.name ?? 'Unknown',
+        issuanceDate: verifiableCredential.issuanceDate
+      },
+      verification: vcVerification,
+      credentialStatus: credentialStatus,
+      ...(verificationError && { warning: verificationError })
+    });
+
+  } catch (error) {
+    console.error("VC verification error:", error.message);
+    // Don't expose internal error messages
+    res.status(500).json({ error: "Credential verification failed" });
+  }
+});
 
 export default router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

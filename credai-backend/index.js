@@ -43,7 +43,7 @@ const apiLimiter = rateLimit({
 });
 app.use("/api/", apiLimiter);
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5174";
 if (!process.env.FRONTEND_URL && process.env.NODE_ENV === "production") {
   console.warn("FRONTEND_URL not set in production — review CORS configuration.");
 }

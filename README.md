@@ -55,7 +55,7 @@ Update the `.env` file with your credentials as shown below.
 
 ---
 
-## 🧾 Environment Setup
+##  Environment Setup
 
 | Section | Variable | Example / Description |
 |----------|-----------|-----------------------|

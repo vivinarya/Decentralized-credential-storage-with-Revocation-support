@@ -25,7 +25,7 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    console.log('📝 Registering new issuer profile:', { 
+    console.log('Registering new issuer profile:', { 
       name, 
       organization,
       wallet: address.slice(0, 10) + '...'
@@ -87,7 +87,7 @@ router.post('/register', async (req, res) => {
 
     await issuer.save();
 
-    console.log('✅ New issuer profile created');
+    console.log('New issuer profile created');
 
     res.json({
       success: true,
@@ -102,7 +102,7 @@ router.post('/register', async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ DID registration error:", error);
+    console.error("DID registration error:", error);
     
     // Handle duplicate organization error
     if (error.code === 11000) {
@@ -129,7 +129,7 @@ router.get('/wallet/:address/profiles', async (req, res) => {
       walletAddress: address.toLowerCase() 
     }).sort({ createdAt: -1 });
 
-    console.log(`✅ Found ${profiles.length} profile(s)`);
+    console.log(`Found ${profiles.length} profile(s)`);
 
     res.json({
       success: true,
@@ -147,7 +147,7 @@ router.get('/wallet/:address/profiles', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Fetch profiles error:', error);
+    console.error('Fetch profiles error:', error);
     res.status(500).json({ error: 'Failed to fetch profiles' });
   }
 });
@@ -167,7 +167,7 @@ router.put('/:did/profile', async (req, res) => {
       });
     }
 
-    console.log('✏️  Updating profile for DID:', did.slice(0, 30) + '...');
+    console.log('Updating profile for DID:', did.slice(0, 30) + '...');
 
     const issuer = await Issuer.findOne({ 
       did: { $regex: new RegExp(`^${did}$`, 'i') }
@@ -203,7 +203,7 @@ router.put('/:did/profile', async (req, res) => {
 
     await issuer.save();
 
-    console.log('✅ Profile updated');
+    console.log('Profile updated');
 
     res.json({
       success: true,
@@ -217,7 +217,7 @@ router.put('/:did/profile', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Update profile error:', error);
+    console.error('Update profile error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
@@ -230,7 +230,7 @@ router.delete('/:did', async (req, res) => {
   try {
     const { did } = req.params;
 
-    console.log('🗑️  Deleting profile:', did.slice(0, 30) + '...');
+    console.log('Deleting profile:', did.slice(0, 30) + '...');
 
     // Check if issuer has documents
     const docCount = await Document.countDocuments({ issuerDID: did });
@@ -250,7 +250,7 @@ router.delete('/:did', async (req, res) => {
       return res.status(404).json({ error: 'Issuer not found' });
     }
 
-    console.log('✅ Profile deleted');
+    console.log('Profile deleted');
 
     res.json({
       success: true,
@@ -258,7 +258,7 @@ router.delete('/:did', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Delete profile error:', error);
+    console.error('Delete profile error:', error);
     res.status(500).json({ error: 'Failed to delete profile' });
   }
 });

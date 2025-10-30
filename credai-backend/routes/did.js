@@ -35,7 +35,7 @@ router.post('/register', async (req, res) => {
     // Check if this wallet already has a profile for this organization
     const existingProfile = await Issuer.findOne({ 
       walletAddress: address.toLowerCase(),
-      'profile.organization': organization
+      'profile.organization': { $eq: organization }
     });
 
     if (existingProfile) {

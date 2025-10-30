@@ -17,6 +17,13 @@ const pendingLimiter = rateLimit({
   message: { error: 'Too many requests to pending issuers list from this IP, please try again later.' }
 });
 
+// Rate limiter: restrict issuer rejection attempts to 10 per 15 minutes per IP
+const rejectLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: { error: 'Too many issuer rejection attempts from this IP, please try again later.' }
+});
+
 const router = express.Router();
 
 /**
@@ -93,7 +100,7 @@ router.post('/issuers/:did/approve', approveLimiter, async (req, res) => {
  * POST /api/admin/issuers/:did/reject
  * Reject an issuer
  */
-router.post('/issuers/:did/reject', async (req, res) => {
+router.post('/issuers/:did/reject', rejectLimiter, async (req, res) => {
   try {
     const { did } = req.params;
     const { reason } = req.body;

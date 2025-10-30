@@ -91,7 +91,7 @@ function App() {
       }
     };
 
-    // FIX: Check if window.ethereum exists AND if .on is a function
+    //  Check if window.ethereum exists AND if .on is a function
     if (window.ethereum && typeof window.ethereum.on === 'function') {
       try {
         window.ethereum.on("accountsChanged", handleAccountsChanged);
@@ -177,7 +177,7 @@ function App() {
       {showExpired && <ExpiredChecker setShowExpired={setShowExpired} />}
       {showRevoke && <RevocationPanel setShowRevoke={setShowRevoke} />}
       
-      {/* FIX: Conditional render and proper props for RegisterIssuerModal */}
+      {/*Conditional render and proper props for RegisterIssuerModal */}
       {showRegisterIssuer && (
         <RegisterIssuerModal 
           isOpen={showRegisterIssuer}

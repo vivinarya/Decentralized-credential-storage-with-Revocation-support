@@ -12,7 +12,7 @@ class VCService {
       const credentialId = `urn:uuid:${crypto.randomUUID()}`;
       const issuanceDate = new Date().toISOString();
       
-      // ✅ Build W3C-compliant VC structure
+
       const credential = {
         '@context': [
           'https://www.w3.org/2018/credentials/v1',
@@ -36,7 +36,7 @@ class VCService {
         }
       };
 
-      // ✅ Create proof using issuer's wallet (from stored wallet address)
+
       const proof = await this.createProof(credential, issuer);
       credential.proof = proof;
 
@@ -52,7 +52,7 @@ class VCService {
    */
   async createProof(credential, issuer) {
     try {
-      // ✅ Use the original wallet private key from environment (for issuing)
+      // Use the original wallet private key from environment (for issuing)
       // In production, you'd retrieve this from a secure vault
       const privateKey = process.env.PRIVATE_KEY;
       if (!privateKey) {

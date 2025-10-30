@@ -87,7 +87,7 @@ router.post(
       });
 
       // Prepare FormData for Pinata
-      console.log('⏳ Uploading to IPFS...');
+      console.log('Uploading to IPFS...');
       const data = new FormData();
 
       // Convert buffer to Blob for FormData compatibility
@@ -115,8 +115,8 @@ router.post(
       const ipfsCid = pinRes.data.IpfsHash;
       const fileHash = ethers.keccak256(req.file.buffer);
 
-      console.log('✅ IPFS uploaded:', ipfsCid.slice(0, 10) + '...');
-      console.log('🔐 File hash:', fileHash.slice(0, 10) + '...');
+      console.log('IPFS uploaded:', ipfsCid.slice(0, 10) + '...');
+      console.log('File hash:', fileHash.slice(0, 10) + '...');
 
       // Setup blockchain connection
       const provider = new ethers.JsonRpcProvider(process.env.NETWORK);
@@ -127,25 +127,25 @@ router.post(
       );
 
       // Check blockchain first for existing document
-      console.log('🔍 Checking blockchain for existing document...');
+      console.log('Checking blockchain for existing document...');
       try {
         const verification = await contract.verifyDocument(fileHash);
         if (verification.exists) {
-          console.log('⚠️  Document already exists on blockchain');
+          console.log('Document already exists on blockchain');
           return res.status(409).json({ 
             error: "Document already registered on blockchain",
             fileHash 
           });
         }
       } catch (checkError) {
-        console.warn('⚠️  Blockchain check failed (continuing):', checkError.message);
+        console.warn(' Blockchain check failed (continuing):', checkError.message);
         // Continue even if check fails (network issues etc)
       }
 
       // Check if document already exists in MongoDB
       const existingDoc = await Document.findOne({ fileHash });
       if (existingDoc) {
-        console.log('⚠️  Document already exists in database');
+        console.log(' Document already exists in database');
         return res.status(409).json({ 
           error: "Document already exists in database",
           fileHash,
@@ -162,7 +162,7 @@ router.post(
       let verifiableCredential = null;
       
       if (issuerDID) {
-        console.log('🔍 Looking up issuer with DID:', issuerDID);
+        console.log(' Looking up issuer with DID:', issuerDID);
         
         // Case-insensitive DID lookup
         issuerInfo = await Issuer.findOne({ 
@@ -170,12 +170,12 @@ router.post(
         });
         
         if (!issuerInfo) {
-          console.log('⚠️  Issuer not found for DID:', issuerDID);
+          console.log('Issuer not found for DID:', issuerDID);
           return res.status(404).json({ error: "Issuer not found" });
         }
 
-        console.log('✅ Issuer found:', issuerInfo.profile.name, 'from', issuerInfo.profile.organization);
-        console.log('📝 Creating Verifiable Credential...');
+        console.log('Issuer found:', issuerInfo.profile.name, 'from', issuerInfo.profile.organization);
+        console.log('Creating Verifiable Credential...');
         
         // Create VC for document
         const tempDoc = {
@@ -187,11 +187,11 @@ router.post(
         };
 
         verifiableCredential = await vcService.createVerifiableCredential(tempDoc, issuerInfo);
-        console.log('✅ VC created:', verifiableCredential.id.slice(0, 30) + '...');
+        console.log('VC created:', verifiableCredential.id.slice(0, 30) + '...');
       }
 
       // Save to MongoDB
-      console.log('💾 Saving to MongoDB...');
+      console.log('Saving to MongoDB...');
       const doc = new Document({
         fileHash,
         ipfsCid,
@@ -206,7 +206,7 @@ router.post(
 
       await doc.save();
       savedDoc = doc;
-      console.log('✅ Document saved to MongoDB');
+      console.log('Document saved to MongoDB');
 
       // Register on blockchain
       console.log('⛓️  Registering on blockchain...');
@@ -220,7 +220,7 @@ router.post(
       const expirationTimestampInt = parseInt(expirationTimestamp) || 0;
       const tx = await contractWithSigner.registerDocument(fileHash, expirationTimestampInt);
       const receipt = await tx.wait();
-      console.log('✅ Registered on blockchain:', tx.hash.slice(0, 10) + '...');
+      console.log('Registered on blockchain:', tx.hash.slice(0, 10) + '...');
 
       // Update issuer stats if applicable (with error handling)
       if (issuerInfo) {
@@ -228,9 +228,9 @@ router.post(
           issuerInfo.documentsIssued += 1;
           issuerInfo.lastActivityAt = new Date();
           await issuerInfo.save();
-          console.log('📊 Updated issuer stats');
+          console.log('Updated issuer stats');
         } catch (statsError) {
-          console.error('⚠️  Failed to update issuer stats:', statsError.message);
+          console.error('Failed to update issuer stats:', statsError.message);
           // Document is still successfully registered, just log the error
         }
       }
@@ -255,15 +255,15 @@ router.post(
         }
       });
     } catch (error) {
-      console.error("❌ Upload error:", error.message);
+      console.error("Upload error:", error.message);
 
       // Rollback: Delete MongoDB entry if blockchain registration failed
       if (savedDoc && savedDoc._id) {
         try {
           await Document.deleteOne({ _id: savedDoc._id });
-          console.log('🔄 Rolled back MongoDB entry due to error');
+          console.log(' Rolled back MongoDB entry due to error');
         } catch (rollbackError) {
-          console.error('❌ Rollback failed:', rollbackError.message);
+          console.error('Rollback failed:', rollbackError.message);
         }
       }
 

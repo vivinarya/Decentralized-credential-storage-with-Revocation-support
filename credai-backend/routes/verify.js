@@ -40,7 +40,7 @@ router.get("/:fileHash", async (req, res) => {
     try {
       const cached = await redisClient.get(cacheKey);
       if (cached) {
-        console.log(" Verification cache HIT:", fileHash.slice(0, 10) + "...");
+        console.log("✅ Verification cache HIT:", fileHash.slice(0, 10) + "...");
         return res.json(JSON.parse(cached));
       }
     } catch (cacheError) {
@@ -54,7 +54,7 @@ router.get("/:fileHash", async (req, res) => {
     }
     console.log('Document found in database');
 
-    console.log(' Verifying on blockchain...');
+    console.log('⛓️  Verifying on blockchain...');
     const provider = new ethers.JsonRpcProvider(process.env.NETWORK);
     const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
@@ -70,11 +70,11 @@ router.get("/:fileHash", async (req, res) => {
     if (!verification.exists) {
       return res.status(404).json({ verified: false, error: "Document not found on blockchain" });
     }
-    console.log('Document verified on blockchain');
+    console.log(' Document verified on blockchain');
 
     // Verify blockchain and database consistency
     if (verification.uploader.toLowerCase() !== doc.uploader.toLowerCase()) {
-      console.warn('⚠️  Uploader mismatch between blockchain and database');
+      console.warn('Uploader mismatch between blockchain and database');
       return res.status(409).json({ 
         verified: false, 
         error: "Data inconsistency detected between blockchain and database" 
@@ -82,7 +82,7 @@ router.get("/:fileHash", async (req, res) => {
     }
     
     if (verification.revoked !== doc.revoked) {
-      console.warn('⚠️  Revocation status mismatch');
+      console.warn('Revocation status mismatch');
       return res.status(409).json({ 
         verified: false, 
         error: "Data inconsistency detected between blockchain and database" 
@@ -109,7 +109,7 @@ router.get("/:fileHash", async (req, res) => {
     };
 
     if (doc.issuerDID) {
-      console.log('Getting issuer & VC info...');
+      console.log(' Getting issuer & VC info...');
       const issuer = await findIssuerByDID(doc.issuerDID);
 
       if (issuer) {
@@ -162,11 +162,11 @@ router.get("/:fileHash", async (req, res) => {
       console.error("Cache set error:", cacheSetError?.message ?? cacheSetError);
     }
 
-    console.log('✅ Verification complete\n');
+    console.log('Verification complete\n');
     res.json(response);
 
   } catch (error) {
-    console.error("❌ Verification error:", error.message);
+    console.error("Verification error:", error.message);
     // Don't expose internal error details
     res.status(500).json({ error: "Verification failed" });
   }
@@ -220,7 +220,7 @@ router.post("/", async (req, res) => {
     }
 
     // Add blockchain verification for consistency with GET endpoint
-    console.log('⛓️  Verifying on blockchain...');
+    console.log('Verifying on blockchain...');
     const provider = new ethers.JsonRpcProvider(process.env.NETWORK);
     const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
@@ -242,7 +242,7 @@ router.post("/", async (req, res) => {
 
     // Verify blockchain and database consistency
     if (verification.uploader.toLowerCase() !== doc.uploader.toLowerCase()) {
-      console.warn('⚠️  Uploader mismatch between blockchain and database');
+      console.warn('Uploader mismatch between blockchain and database');
       return res.status(409).json({ 
         verified: false, 
         error: "Data inconsistency detected between blockchain and database" 
@@ -250,7 +250,7 @@ router.post("/", async (req, res) => {
     }
     
     if (verification.revoked !== doc.revoked) {
-      console.warn('⚠️  Revocation status mismatch');
+      console.warn('Revocation status mismatch');
       return res.status(409).json({ 
         verified: false, 
         error: "Data inconsistency detected between blockchain and database" 
@@ -409,6 +409,14 @@ router.post("/credential", async (req, res) => {
 });
 
 export default router;
+
+//start
+
+
+
+
+
+
 
 
 

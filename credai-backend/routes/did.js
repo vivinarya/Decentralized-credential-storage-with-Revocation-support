@@ -171,7 +171,7 @@ router.put('/:did/profile', async (req, res) => {
     console.log('Updating profile for DID:', did.slice(0, 30) + '...');
 
     const issuer = await Issuer.findOne({ 
-      did: { $regex: new RegExp(`^${did}$`, 'i') }
+      did: { $regex: new RegExp(`^${_.escapeRegExp(did)}$`, 'i') }
     });
 
     if (!issuer) {

@@ -1,6 +1,7 @@
 import express from 'express';
 import Issuer from '../models/Issuer.js';
 import rateLimit from 'express-rate-limit';
+import _ from 'lodash';
 
 // Rate limiter: restrict approval attempts to 10 per 15 minutes per IP
 const approveLimiter = rateLimit({
@@ -54,9 +55,9 @@ router.get('/issuers/pending', pendingLimiter, async (req, res) => {
 router.post('/issuers/:did/approve', approveLimiter, async (req, res) => {
   try {
     const { did } = req.params;
-
+    const safeDid = _.escapeRegExp(did);
     const issuer = await Issuer.findOne({ 
-      did: { $regex: new RegExp(`^${did}$`, 'i') } 
+      did: { $regex: new RegExp(`^${safeDid}$`, 'i') } 
     });
 
     if (!issuer) {
@@ -96,9 +97,9 @@ router.post('/issuers/:did/reject', async (req, res) => {
   try {
     const { did } = req.params;
     const { reason } = req.body;
-
+    const safeDid = _.escapeRegExp(did);
     const issuer = await Issuer.findOne({ 
-      did: { $regex: new RegExp(`^${did}$`, 'i') } 
+      did: { $regex: new RegExp(`^${safeDid}$`, 'i') } 
     });
 
     if (!issuer) {

@@ -1,4 +1,5 @@
 import express from 'express';
+import _ from 'lodash';
 import Issuer from '../models/Issuer.js';
 import Document from '../models/Document.js';
 
@@ -243,7 +244,7 @@ router.delete('/:did', async (req, res) => {
     }
 
     const result = await Issuer.deleteOne({ 
-      did: { $regex: new RegExp(`^${did}$`, 'i') } 
+      did: { $regex: new RegExp(`^${_.escapeRegExp(did)}$`, 'i') } 
     });
 
     if (result.deletedCount === 0) {
@@ -272,7 +273,7 @@ router.get('/:did', async (req, res) => {
     const { did } = req.params;
 
     const issuer = await Issuer.findOne({ 
-      did: { $regex: new RegExp(`^${did}$`, 'i') } 
+      did: { $regex: new RegExp(`^${_.escapeRegExp(did)}$`, 'i') } 
     });
 
     if (!issuer) {

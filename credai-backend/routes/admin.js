@@ -9,13 +9,20 @@ const approveLimiter = rateLimit({
   message: { error: 'Too many approval attempts from this IP, please try again later.' }
 });
 
+// Rate limiter: restrict pending issuer listing requests to 50 per 15 minutes per IP
+const pendingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // limit each IP to 50 requests per windowMs
+  message: { error: 'Too many requests to pending issuers list from this IP, please try again later.' }
+});
+
 const router = express.Router();
 
 /**
  * GET /api/admin/issuers/pending
  * Get all pending issuer approvals
  */
-router.get('/issuers/pending', async (req, res) => {
+router.get('/issuers/pending', pendingLimiter, async (req, res) => {
   try {
     const pendingIssuers = await Issuer.find({ 
       status: 'pending' 

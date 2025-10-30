@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import { body, validationResult } from "express-validator";
 import axios from "axios";
+import _ from "lodash";
 import { ethers } from "ethers";
 import Document from "../models/Document.js";
 import Issuer from "../models/Issuer.js";
@@ -166,7 +167,7 @@ router.post(
         
         // Case-insensitive DID lookup
         issuerInfo = await Issuer.findOne({ 
-          did: { $regex: new RegExp(`^${issuerDID}$`, 'i') } 
+          did: { $regex: new RegExp(`^${_.escapeRegExp(issuerDID)}$`, 'i') } 
         });
         
         if (!issuerInfo) {

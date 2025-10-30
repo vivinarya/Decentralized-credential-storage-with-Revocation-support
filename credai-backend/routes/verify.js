@@ -298,6 +298,9 @@ router.post("/credential", async (req, res) => {
     if (!fileHash) {
       return res.status(400).json({ error: "fileHash required" });
     }
+    if (typeof fileHash !== "string") {
+      return res.status(400).json({ error: "fileHash must be a string" });
+    }
 
     if (!verifiableCredential) {
       return res.status(400).json({ error: "verifiableCredential required" });
@@ -310,7 +313,7 @@ router.post("/credential", async (req, res) => {
       });
     }
 
-    const doc = await Document.findOne({ fileHash });
+    const doc = await Document.findOne({ fileHash: { $eq: fileHash } });
     if (!doc) {
       return res.status(404).json({ error: "Document not found" });
     }

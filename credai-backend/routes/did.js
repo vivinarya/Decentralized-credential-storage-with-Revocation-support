@@ -185,7 +185,7 @@ router.put('/:did/profile', async (req, res) => {
       // Check if another profile from this wallet already has this org
       const duplicate = await Issuer.findOne({
         walletAddress: issuer.walletAddress,
-        'profile.organization': { $regex: new RegExp(`^${organization}$`, 'i') },
+        'profile.organization': { $regex: new RegExp(`^${_.escapeRegExp(organization)}$`, 'i') },
         _id: { $ne: issuer._id }
       });
       
